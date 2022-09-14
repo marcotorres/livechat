@@ -1,4 +1,6 @@
-# Project Live Helper Chat
+# Live Helper Chat With Docker
+Live Helper chat + Traefik (SSL Letsencrypt) + redis + MySQL
+Mode nodejs / php
 
 ## Requirements
 - git 2.2 or higher
