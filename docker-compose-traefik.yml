@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+
+  web:
+    image: nginx:latest
+    container_name: livechate_web
+    volumes:
+      - ./livehelperchat/lhc_web:/code
+      - ./conf/nginx/site.conf:/etc/nginx/conf.d/default.conf
+      - ./conf/nginx/mime.types:/etc/nginx/mime.types
+      - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - db
+      - php
+    networks:
+      - traefik
+      - livechat_vlan
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.accesslog.enabled=false"
+      - "traefik.http.routers.livechat-web-rtr.entrypoints=websecure"
+      - "traefik.http.routers.livechat-web-rtr.rule=Host(`$LIVECHAT_HOSTNAME`)"
+      - "traefik.http.routers.livechat-web-rtr.tls=true"
+      - "traefik.http.routers.livechat-web-rtr.tls.certresolver=le"
+
+  php:
+    build: ./Dockerfiles/php
+    image: remdex/livehelperchat-php:latest
+    container_name: livechate_php
+    environment:
+      LHC_SECRET_HASH: ${LIVECHAT_LHC_SECRET_HASH}
+      LHC_WEBHOOKS_ENABLED: ${LIVECHAT_LHC_WEBHOOKS_ENABLED}
+    volumes:
+      - ./livehelperchat/lhc_web:/code
+      - ./lhc-php-resque/lhcphpresque:/code/extension/lhcphpresque
+      - ./conf/scripts:/scripts
+      - ./conf/php-fpm/zz-lhc.conf:/usr/local/etc/php-fpm.d/zz-lhc.conf
+    networks:
+      - livechat_vlan
+    restart: always
+
+  cobrowse:
+    build: ./Dockerfiles/cobrowse
+    image: remdex/livehelperchat-cobrowse:latest
+    container_name: livechate_cobrowse
+    networks:
+      - livechat_vlan
+    restart: always
+
+  php-cronjob:
+    build: ./Dockerfiles/cronjob
+    image: remdex/livehelperchat-php-cronjob:latest
+    container_name: livechate_cronjob
+    volumes:
+      - ./livehelperchat/lhc_web:/code
+      - ./lhc-php-resque/lhcphpresque:/code/extension/lhcphpresque
+      - ./conf/scripts:/scripts
+    networks:
+      - livechat_vlan
+    restart: always
+
+  php-resque:
+    build: ./Dockerfiles/php-resque
+    image: remdex/livehelperchat-php-resque:latest
+    container_name: livechate_resque
+    volumes:
+      - ./livehelperchat/lhc_web:/code
+      - ./lhc-php-resque/lhcphpresque:/code/extension/lhcphpresque
+      - ./conf/scripts:/scripts
+    networks:
+      - livechat_vlan
+    depends_on:
+      - db
+      - redis
+    restart: always
+
+  redis:
+    image: "redis:alpine"
+    container_name: livechate_redis
+    networks:
+      - livechat_vlan
+    restart: always
+
+  db:
+    image: mysql:5
+    container_name: livechate_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: UTC
+    volumes:
+      - ./data:/app:rw
+      - ./mysql/my.cnf:/etc/mysql/conf.d/my-over.cnf
+      - livechat_data_mysql:/var/lib/mysql
+    networks:
+      - livechat_vlan
+    restart: always
+
+networks:
+  livechat_vlan:
+  traefik:
+    external:
+      name: traefik
+  default:
+    driver: bridge
+
+volumes:
+  livechat_data_mysql:
